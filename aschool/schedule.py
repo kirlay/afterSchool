@@ -40,16 +40,26 @@ def is_visible(now, begin, end):
     return begin <= current < end
 
 
-def next_transition(now, begin, end):
-    """严格晚于 now 的下一个边界时刻（开始或结束）。"""
+def next_transition(now, begin, end, extra_times=()):
+    """严格晚于 now 的下一个边界时刻（开始、结束，以及额外时刻如每日复位）。"""
+    moments = [begin, end]
+    moments.extend(extra_times)
     best = None
     for offset in (0, 1, 2):
         day = now.date() + datetime.timedelta(days=offset)
-        for moment in (begin, end):
+        for moment in moments:
             candidate = datetime.datetime.combine(day, moment)
             if candidate > now and (best is None or candidate < best):
                 best = candidate
     return best
+
+
+def next_occurrence(now, moment):
+    """下一个 daily 时刻：今天还没到就是今天，否则明天。"""
+    candidate = datetime.datetime.combine(now.date(), moment)
+    if candidate <= now:
+        candidate += datetime.timedelta(days=1)
+    return candidate
 
 
 def milliseconds_until(target, now):
@@ -58,13 +68,13 @@ def milliseconds_until(target, now):
     return int(delta) if delta > 0 else 0
 
 
-def next_delay_ms(now, begin, end, visible_interval_ms, hidden_cap_ms):
+def next_delay_ms(now, begin, end, visible_interval_ms, hidden_cap_ms, extra_times=()):
     """下一次检查要睡多久（毫秒）。
 
     可见时最多睡 visible_interval_ms，隐藏时最多睡 hidden_cap_ms；
-    两种情况都会在边界时刻之前醒来，保证准时切换。
+    两种情况都会在边界时刻（含每日复位等额外时刻）之前醒来，保证准时。
     """
-    target = next_transition(now, begin, end)
+    target = next_transition(now, begin, end, extra_times)
     remaining = milliseconds_until(target, now)
     cap = visible_interval_ms if is_visible(now, begin, end) else hidden_cap_ms
     return int(min(cap, remaining))

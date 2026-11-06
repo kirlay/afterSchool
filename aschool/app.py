@@ -27,7 +27,7 @@ POLL_INTERVAL_MS = 150
 POLL_FLAG_EVERY = 7
 STARTUP_SHOW_MS = 3000
 
-HELP_TEXT = """樱花校区放学情况  v2.1
+HELP_TEXT = """樱花校区放学情况  v2.2
 
 一、班号怎么输入
     101 = 一年级 1 班，102 = 一年级 2 班，以此类推；
@@ -41,12 +41,14 @@ HELP_TEXT = """樱花校区放学情况  v2.1
 
 三、一次全部复位
     输入 000 后按回车，确认后所有班级都变回“未放学”。
+    另外每天上午 9:00（时间可在设置里改，也可以关掉）会自动复位一次。
 
 四、打开设置（快捷键 {hotkey}）
     默认 F9；也可以是 F10、F11、F12，或 Ctrl+Alt+F9 这类组合，
     在设置里可以改。窗口最小化到任务栏时按同样有效。
     班级数：每个年级 0–12 个班，0 表示没有这个年级；
     显示时段：窗口在这个时间段内显示，其余时间最小化到任务栏；
+    每日复位：每天到这个时间自动把所有班级恢复为未放学；
     校准间隔：默认 120 秒，越大越省电，到点仍会准时切换；
     还可以设置窗口置顶、隐藏时自动复位、窗口位置复位。
 
@@ -93,6 +95,7 @@ class Application(object):
         self._help_window = None
         self._tick_job = None
         self._poll_count = 0
+        self._next_reset = None
         self._offset_seconds = self._parse_now_offset(self.options.get("now"))
         self._logo_image = None
 
@@ -400,7 +403,28 @@ class Application(object):
         if self.options.get("force_show"):
             return 60000
         interval = int(self.cfg["check_interval_seconds"]) * 1000
-        return schedule.next_delay_ms(now, begin, end, interval, HIDDEN_CAP_MS)
+        reset_time = self._reset_time()
+        extra = (reset_time,) if reset_time is not None else ()
+        return schedule.next_delay_ms(now, begin, end, interval, HIDDEN_CAP_MS, extra)
+
+    def _reset_time(self):
+        daily = self.cfg.get("daily_reset") or {}
+        if not daily.get("enabled", True):
+            return None
+        try:
+            return schedule.parse_hhmm(daily.get("time", "09:00"))
+        except ValueError:
+            return None
+
+    def _schedule_next_reset(self, now):
+        moment = self._reset_time()
+        self._next_reset = schedule.next_occurrence(now, moment) if moment is not None else None
+
+    def _maybe_daily_reset(self, now):
+        if self._next_reset is None or now < self._next_reset:
+            return
+        self.reset_all()
+        self._schedule_next_reset(now)
 
     def _schedule_tick(self, delay_ms):
         if self._tick_job is not None:
@@ -412,11 +436,12 @@ class Application(object):
 
     def tick(self):
         self._tick_job = None
+        now = self._now()
+        self._maybe_daily_reset(now)
         if self._dialog_open():
             # 弹窗打开期间不要突然把主窗口藏掉
             self._schedule_tick(60000)
             return
-        now = self._now()
         begin, end = self._begin_end()
         visible = self.options.get("force_show") or schedule.is_visible(now, begin, end)
         if visible and not self._visible:
@@ -501,6 +526,7 @@ class Application(object):
             self.show_window()
         elif not visible and self._visible:
             self.hide_window()
+        self._schedule_next_reset(now)
         self._schedule_tick(self._delay_ms(now, begin, end))
 
     def move_to_home(self):
@@ -552,6 +578,7 @@ class Application(object):
         self._rebuild()
         self._setup_hotkeys()
         now = self._now()
+        self._schedule_next_reset(now)
         begin, end = self._begin_end()
         visible = self.options.get("force_show") or schedule.is_visible(now, begin, end)
         self.show_window()
@@ -659,6 +686,27 @@ class SettingsDialog(tk.Toplevel):
             row=2, column=2, columnspan=2, sticky="w", pady=(8, 0)
         )
 
+        daily = self.app.cfg.get("daily_reset") or {}
+        self.daily_reset_var = tk.BooleanVar(value=bool(daily.get("enabled", True)))
+        tk.Checkbutton(
+            time_frame,
+            text="每天定时复位",
+            variable=self.daily_reset_var,
+            font=FONT_HINT,
+            bg=BG,
+            fg=COLOR_PENDING,
+            activebackground=BG,
+            activeforeground=COLOR_PENDING,
+            selectcolor=BG,
+            highlightthickness=0,
+            bd=0,
+        ).grid(row=3, column=0, sticky="w", pady=(8, 0))
+        self.reset_time_var = tk.StringVar(value=str(daily.get("time", "09:00")))
+        self._entry(time_frame, self.reset_time_var).grid(row=3, column=1, padx=(4, 16), pady=(8, 0), sticky="w")
+        self._hint(time_frame, "每天到这个时间把所有班级恢复为未放学").grid(
+            row=3, column=2, columnspan=2, sticky="w", pady=(8, 0)
+        )
+
         extra_frame = tk.Frame(self, bg=BG, padx=16, pady=4)
         extra_frame.pack(fill="x")
         self._hint(extra_frame, "设置快捷键").grid(row=0, column=0, sticky="e", pady=(4, 0))
@@ -730,6 +778,10 @@ class SettingsDialog(tk.Toplevel):
                 "classes": [self._int_value(variable, "班级数") for variable in self.class_vars],
                 "show": {"begin": self.begin_var.get(), "end": self.end_var.get()},
                 "check_interval_seconds": self._int_value(self.interval_var, "校准间隔"),
+                "daily_reset": {
+                    "enabled": bool(self.daily_reset_var.get()),
+                    "time": self.reset_time_var.get().strip() or "09:00",
+                },
                 "hide_titlebar": self.app.cfg["hide_titlebar"],
                 "topmost": bool(self.topmost_var.get()),
                 "reset_on_hide": bool(self.reset_var.get()),

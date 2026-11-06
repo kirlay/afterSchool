@@ -114,5 +114,30 @@ class DelayTests(unittest.TestCase):
         )
 
 
+class ExtraTimeTests(unittest.TestCase):
+    RESET = datetime.time(9, 0)
+
+    def test_next_occurrence_today(self):
+        self.assertEqual(schedule.next_occurrence(at(8, 0), self.RESET), at(9, 0))
+
+    def test_next_occurrence_at_exact_time_goes_tomorrow(self):
+        self.assertEqual(schedule.next_occurrence(at(9, 0), self.RESET), at(9, 0, day=7))
+
+    def test_next_occurrence_later_today_goes_tomorrow(self):
+        self.assertEqual(schedule.next_occurrence(at(10, 0), self.RESET), at(9, 0, day=7))
+
+    def test_transition_includes_reset_boundary(self):
+        self.assertEqual(schedule.next_transition(at(8, 59), BEGIN, END, (self.RESET,)), at(9, 0))
+
+    def test_transition_ignores_later_reset(self):
+        self.assertEqual(schedule.next_transition(at(10, 0), BEGIN, END, (self.RESET,)), at(14, 50))
+
+    def test_delay_wakes_for_reset(self):
+        self.assertEqual(
+            schedule.next_delay_ms(at(8, 59, 30), BEGIN, END, 120000, 1800000, (self.RESET,)),
+            30000,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

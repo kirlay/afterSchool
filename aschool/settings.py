@@ -27,6 +27,7 @@ DEFAULT = {
     "classes": [3, 4, 4, 4, 4, 4],
     "show": {"begin": "14:50", "end": "16:25"},
     "check_interval_seconds": 120,
+    "daily_reset": {"enabled": True, "time": "09:00"},
     "hide_titlebar": False,
     "topmost": False,
     "reset_on_hide": True,
@@ -141,6 +142,19 @@ def _validate_interval(raw):
     return interval
 
 
+def _validate_daily_reset(raw):
+    if not isinstance(raw, dict):
+        raw = {}
+    enabled = raw.get("enabled", True)
+    if not isinstance(enabled, bool):
+        raise SettingsError("每日复位的开关必须是 true 或 false")
+    try:
+        moment = schedule.parse_hhmm(str(raw.get("time", "09:00")))
+    except ValueError as exc:
+        raise SettingsError("每日复位时间不正确：%s" % exc)
+    return {"enabled": enabled, "time": schedule.format_hhmm(moment)}
+
+
 def _validate_window(raw):
     if not isinstance(raw, dict):
         raw = {}
@@ -181,6 +195,7 @@ def validate(raw):
     result["check_interval_seconds"] = _validate_interval(
         raw.get("check_interval_seconds", result["check_interval_seconds"])
     )
+    result["daily_reset"] = _validate_daily_reset(raw.get("daily_reset", result["daily_reset"]))
 
     for flag in ("hide_titlebar", "topmost", "reset_on_hide"):
         value = raw.get(flag, result[flag])
@@ -209,7 +224,8 @@ def load(path=None):
         return default_settings(), None
 
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        # utf-8-sig：兼容用记事本/VS Code 保存成"UTF-8 带 BOM"的文件
+        with open(path, "r", encoding="utf-8-sig") as handle:
             raw = json.load(handle)
         settings = validate(raw)
         if _stored_version(raw) != settings["version"]:

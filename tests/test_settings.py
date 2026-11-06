@@ -17,6 +17,7 @@ class DefaultTests(unittest.TestCase):
         self.assertEqual(cfg["classes"], [3, 4, 4, 4, 4, 4])
         self.assertEqual(cfg["show"], {"begin": "14:50", "end": "16:25"})
         self.assertEqual(cfg["check_interval_seconds"], 120)
+        self.assertEqual(cfg["daily_reset"], {"enabled": True, "time": "09:00"})
         self.assertFalse(cfg["hide_titlebar"])
         self.assertFalse(cfg["topmost"])
         self.assertTrue(cfg["reset_on_hide"])
@@ -88,6 +89,35 @@ class ValidateTests(unittest.TestCase):
             with self.assertRaises(settings.SettingsError):
                 settings.validate(cfg)
 
+    def test_daily_reset_default_when_missing(self):
+        cfg = self.base()
+        del cfg["daily_reset"]
+        self.assertEqual(settings.validate(cfg)["daily_reset"], {"enabled": True, "time": "09:00"})
+
+    def test_daily_reset_time_is_normalized(self):
+        cfg = self.base()
+        cfg["daily_reset"] = {"enabled": True, "time": "8:5"}
+        self.assertEqual(settings.validate(cfg)["daily_reset"], {"enabled": True, "time": "08:05"})
+
+    def test_daily_reset_can_be_disabled(self):
+        cfg = self.base()
+        cfg["daily_reset"] = {"enabled": False, "time": "09:00"}
+        self.assertFalse(settings.validate(cfg)["daily_reset"]["enabled"])
+
+    def test_daily_reset_bad_time(self):
+        cfg = self.base()
+        cfg["daily_reset"] = {"enabled": True, "time": "25:00"}
+        with self.assertRaises(settings.SettingsError) as caught:
+            settings.validate(cfg)
+        self.assertIn("每日复位时间", str(caught.exception))
+
+    def test_daily_reset_enabled_must_be_bool(self):
+        cfg = self.base()
+        cfg["daily_reset"] = {"enabled": "yes", "time": "09:00"}
+        with self.assertRaises(settings.SettingsError) as caught:
+            settings.validate(cfg)
+        self.assertIn("每日复位", str(caught.exception))
+
     def test_flags_must_be_bool(self):
         cfg = self.base()
         cfg["hide_titlebar"] = "yes"
@@ -150,6 +180,7 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(cfg["classes"], [3, 4, 4, 4, 4, 4])
         self.assertEqual(cfg["show"], {"begin": "15:00", "end": "16:30"})
         self.assertEqual(cfg["check_interval_seconds"], 60)
+        self.assertEqual(cfg["daily_reset"], {"enabled": True, "time": "09:00"})
         self.assertFalse(cfg["reset_on_hide"])
         self.assertEqual(cfg["hotkey"], "F10")
         self.assertEqual(cfg["window"], {"x": 5, "y": 6})
@@ -185,6 +216,17 @@ class MigrationTests(unittest.TestCase):
             self.assertFalse(on_disk["hide_titlebar"])
             self.assertFalse(on_disk["topmost"])
             self.assertEqual(on_disk["show"], {"begin": "15:00", "end": "16:30"})
+
+    def test_file_with_utf8_bom_is_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "settings.json")
+            with open(path, "w", encoding="utf-8-sig") as handle:
+                json.dump(self.v1_settings(), handle)
+            loaded, warning = settings.load(path)
+            self.assertIsNone(warning)
+            self.assertFalse(loaded["hide_titlebar"])
+            self.assertEqual(loaded["classes"], [3, 4, 4, 4, 4, 4])
+            self.assertEqual(loaded["daily_reset"], {"enabled": True, "time": "09:00"})
 
 
 class FileTests(unittest.TestCase):
