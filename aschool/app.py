@@ -9,6 +9,7 @@ import traceback
 from tkinter import messagebox
 
 from . import hotkey
+from . import layout
 from . import schedule
 from . import settings as st
 from . import winutil
@@ -17,8 +18,6 @@ BG = "black"
 COLOR_PENDING = "green"
 COLOR_DONE = "red"
 COLOR_TITLE = "#f26522"
-FONT_TITLE = ("黑体", 20)
-FONT_CLASS = ("黑体", 16)
 FONT_HINT = ("黑体", 12)
 
 HIDDEN_CAP_MS = 30 * 60 * 1000
@@ -27,7 +26,7 @@ POLL_INTERVAL_MS = 150
 POLL_FLAG_EVERY = 7
 STARTUP_SHOW_MS = 3000
 
-HELP_TEXT = """樱花校区放学情况  v2.2.1
+HELP_TEXT = """樱花校区放学情况  v2.3.0
 
 一、班号怎么输入
     101 = 一年级 1 班，102 = 一年级 2 班，以此类推；
@@ -46,6 +45,10 @@ HELP_TEXT = """樱花校区放学情况  v2.2.1
 四、打开设置（快捷键 {hotkey}）
     默认 F9；也可以是 F10、F11、F12，或 Ctrl+Alt+F9 这类组合，
     在设置里可以改。窗口最小化到任务栏时按同样有效。
+    校名：显示在窗口顶部（默认“宁波市四眼碶小学樱花校区”）；
+    窗口宽度/高度：像素，默认 548×416；
+    字号：班级文字大小（磅），默认 16；行距：行与行之间像素，默认 44；
+    字号调大时，窗口宽度/高度和行距也要一起调大，否则会挤在一起；
     班级数：每个年级 0–12 个班，0 表示没有这个年级；
     显示时段：窗口在这个时间段内显示，其余时间最小化到任务栏；
     每日复位：每天到这个时间自动把所有班级恢复为未放学；
@@ -130,8 +133,8 @@ class Application(object):
 
         self.title_label = tk.Label(
             root,
-            text="宁波市四眼碶小学樱花校区\n放学情况",
-            font=FONT_TITLE,
+            text=layout.title_text(self.cfg["school_name"]),
+            font=self._fonts()[0],
             bg=BG,
             fg=COLOR_TITLE,
             justify="center",
@@ -169,10 +172,20 @@ class Application(object):
         except tk.TclError:
             pass
 
+    def _fonts(self):
+        """当前字号设置对应的 (标题, 班级, 提示) 三种字体。"""
+        size = int(self.cfg["layout"]["font_size"])
+        return (
+            ("黑体", layout.title_font_size(size)),
+            ("黑体", size),
+            ("黑体", layout.hint_font_size(size)),
+        )
+
     def _setup_widgets(self):
-        self.counter_label = tk.Label(self.root, text="读取班级编号：", font=FONT_HINT, bg=BG, fg=COLOR_PENDING)
+        hint_font = self._fonts()[2]
+        self.counter_label = tk.Label(self.root, text="读取班级编号：", font=hint_font, bg=BG, fg=COLOR_PENDING)
         self.entry_var = tk.StringVar(self.root)
-        self.entry = tk.Entry(self.root, textvariable=self.entry_var, width=15, font=FONT_HINT, justify="center")
+        self.entry = tk.Entry(self.root, textvariable=self.entry_var, width=15, font=hint_font, justify="center")
         self.entry.bind("<Return>", self.on_enter)
         self.root.bind("<Button-1>", self._on_click)
         self.root.bind("<FocusIn>", self._on_focus_in)
@@ -180,12 +193,8 @@ class Application(object):
     # ------------------------------------------------------------------ 布局
 
     def _layout(self):
-        classes = self.cfg["classes"]
-        columns = max(classes) if classes else 1
-        rows = max(1, len([count for count in classes if count > 0]))
-        width = max(548, 179 + 123 * (columns - 1))
-        entry_y = 140 + 44 * (rows - 1)
-        height = max(416, entry_y + 56)
+        width = int(self.cfg["layout"]["width"])
+        height = int(self.cfg["layout"]["height"])
         # 配置里存的是"客户区"左上角：默认 0,0 时客户区贴屏幕左上角，
         # 标题栏和边框被挤到屏幕外（任务栏里仍然正常显示）。
         # --decorated 用于排查问题：按"窗口左上角"摆放，标题栏可见。
@@ -196,7 +205,7 @@ class Application(object):
         else:
             left, top = self._frame_offsets()
         self.root.geometry("%dx%d+%d+%d" % (width, height, client_x - left, client_y - top))
-        return entry_y
+        return width, height
 
     def _frame_offsets(self):
         """边框/标题栏占掉的像素：能实测就实测，否则用系统度量。"""
@@ -236,8 +245,22 @@ class Application(object):
         self.labels = []
         self.label_by_code = {}
 
+        title_font, class_font, hint_font = self._fonts()
+        self.title_label.config(
+            text=layout.title_text(self.cfg["school_name"]),
+            font=title_font,
+        )
+        self.counter_label.config(font=hint_font)
+        self.entry.config(font=hint_font)
+
+        classes = self.cfg["classes"]
+        columns = max(classes) if classes else 1
+        font_size = int(self.cfg["layout"]["font_size"])
+        row_spacing = int(self.cfg["layout"]["row_spacing"])
+        width, height = self._layout()
+
         row = 0
-        for grade_index, count in enumerate(self.cfg["classes"]):
+        for grade_index, count in enumerate(classes):
             if count <= 0:
                 continue
             for class_no in range(1, int(count) + 1):
@@ -245,18 +268,23 @@ class Application(object):
                 label = tk.Label(
                     self.root,
                     text=self._class_text(grade_index, class_no, False),
-                    font=FONT_CLASS,
+                    font=class_font,
                     bg=BG,
                     fg=COLOR_PENDING,
                 )
-                label.place(x=30 + 123 * (class_no - 1), y=95 + 44 * row)
+                label.place(
+                    x=layout.column_x(width, columns, class_no),
+                    y=layout.row_y(font_size, row_spacing, row),
+                )
                 self.labels.append((code, label, grade_index, class_no))
                 self.label_by_code[code] = (label, grade_index, class_no)
             row += 1
 
-        entry_y = self._layout()
+        entry_y = layout.entry_y(height, font_size)
         self.counter_label.place(x=20, y=entry_y + 4)
-        self.entry.place(x=150, y=entry_y)
+        self.root.update_idletasks()
+        entry_x = 20 + self.counter_label.winfo_reqwidth() + 12
+        self.entry.place(x=entry_x, y=entry_y)
 
     @staticmethod
     def _class_text(grade_index, class_no, done):
@@ -645,6 +673,37 @@ class SettingsDialog(tk.Toplevel):
         )
 
     def _build(self):
+        display_frame = tk.Frame(self, bg=BG, padx=16, pady=12)
+        display_frame.pack(fill="x")
+        self._hint(display_frame, "显示").grid(row=0, column=0, columnspan=8, sticky="w", pady=(0, 6))
+
+        self._hint(display_frame, "校名").grid(row=1, column=0, sticky="e")
+        self.school_var = tk.StringVar(value=self.app.cfg.get("school_name", ""))
+        self._entry(display_frame, self.school_var, width=30).grid(
+            row=1, column=1, columnspan=5, padx=(4, 0), sticky="w"
+        )
+
+        layout_cfg = self.app.cfg["layout"]
+        self.layout_vars = {}
+        for column, (key, label, width) in enumerate(
+            (
+                ("width", "窗口宽度(像素)", 6),
+                ("height", "窗口高度(像素)", 6),
+                ("font_size", "字号(磅)", 5),
+                ("row_spacing", "行距(像素)", 6),
+            )
+        ):
+            self._hint(display_frame, label).grid(row=2, column=column * 2, sticky="e", pady=(8, 0), padx=(0, 4))
+            variable = tk.StringVar(value=str(layout_cfg[key]))
+            self._entry(display_frame, variable, width=width).grid(
+                row=2, column=column * 2 + 1, sticky="w", pady=(8, 0)
+            )
+            self.layout_vars[key] = variable
+
+        self._hint(display_frame, "字号调大时，窗口宽度/高度和行距也要一起调大").grid(
+            row=3, column=0, columnspan=8, sticky="w", pady=(6, 0)
+        )
+
         class_frame = tk.Frame(self, bg=BG, padx=16, pady=12)
         class_frame.pack(fill="x")
         title = self._hint(class_frame, "班级数（0 表示该年级没有班级）")
@@ -775,12 +834,19 @@ class SettingsDialog(tk.Toplevel):
         try:
             candidate = {
                 "version": self.app.cfg.get("version", st.SETTINGS_VERSION),
+                "school_name": self.school_var.get(),
                 "classes": [self._int_value(variable, "班级数") for variable in self.class_vars],
                 "show": {"begin": self.begin_var.get(), "end": self.end_var.get()},
                 "check_interval_seconds": self._int_value(self.interval_var, "校准间隔"),
                 "daily_reset": {
                     "enabled": bool(self.daily_reset_var.get()),
                     "time": self.reset_time_var.get().strip() or "09:00",
+                },
+                "layout": {
+                    "width": self._int_value(self.layout_vars["width"], "窗口宽度"),
+                    "height": self._int_value(self.layout_vars["height"], "窗口高度"),
+                    "font_size": self._int_value(self.layout_vars["font_size"], "字号"),
+                    "row_spacing": self._int_value(self.layout_vars["row_spacing"], "行距"),
                 },
                 "hide_titlebar": self.app.cfg["hide_titlebar"],
                 "topmost": bool(self.topmost_var.get()),

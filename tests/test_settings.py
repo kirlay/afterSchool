@@ -14,6 +14,11 @@ class DefaultTests(unittest.TestCase):
     def test_default_settings_are_valid(self):
         cfg = settings.validate(settings.default_settings())
         self.assertEqual(cfg["version"], settings.SETTINGS_VERSION)
+        self.assertEqual(cfg["school_name"], "宁波市四眼碶小学樱花校区")
+        self.assertEqual(
+            cfg["layout"],
+            {"width": 548, "height": 416, "font_size": 16, "row_spacing": 44},
+        )
         self.assertEqual(cfg["classes"], [3, 4, 4, 4, 4, 4])
         self.assertEqual(cfg["show"], {"begin": "14:50", "end": "16:25"})
         self.assertEqual(cfg["check_interval_seconds"], 120)
@@ -154,6 +159,57 @@ class ValidateTests(unittest.TestCase):
         clean = settings.validate(cfg)
         self.assertNotIn("future_option", clean)
 
+    def test_school_name_is_trimmed(self):
+        cfg = self.base()
+        cfg["school_name"] = "  某某小学  "
+        self.assertEqual(settings.validate(cfg)["school_name"], "某某小学")
+
+    def test_school_name_can_be_empty(self):
+        cfg = self.base()
+        cfg["school_name"] = ""
+        self.assertEqual(settings.validate(cfg)["school_name"], "")
+
+    def test_school_name_too_long(self):
+        cfg = self.base()
+        cfg["school_name"] = "校" * 41
+        with self.assertRaises(settings.SettingsError) as caught:
+            settings.validate(cfg)
+        self.assertIn("40", str(caught.exception))
+
+    def test_school_name_must_be_text(self):
+        cfg = self.base()
+        cfg["school_name"] = 123
+        with self.assertRaises(settings.SettingsError):
+            settings.validate(cfg)
+
+    def test_layout_defaults_when_missing(self):
+        cfg = self.base()
+        del cfg["layout"]
+        self.assertEqual(
+            settings.validate(cfg)["layout"],
+            {"width": 548, "height": 416, "font_size": 16, "row_spacing": 44},
+        )
+
+    def test_layout_bounds(self):
+        for key, low, high in (
+            ("width", 300, 1920),
+            ("height", 240, 1080),
+            ("font_size", 10, 48),
+            ("row_spacing", 20, 150),
+        ):
+            for bad in (low - 1, high + 1, "abc", ""):
+                cfg = self.base()
+                cfg["layout"] = dict(settings.DEFAULT["layout"])
+                cfg["layout"][key] = bad
+                with self.assertRaises(settings.SettingsError, msg="%s=%r" % (key, bad)):
+                    settings.validate(cfg)
+
+            for good in (low, high):
+                cfg = self.base()
+                cfg["layout"] = dict(settings.DEFAULT["layout"])
+                cfg["layout"][key] = good
+                self.assertEqual(settings.validate(cfg)["layout"][key], good)
+
 
 class MigrationTests(unittest.TestCase):
     def v1_settings(self):
@@ -191,6 +247,41 @@ class MigrationTests(unittest.TestCase):
         cfg = settings.validate(raw)
         self.assertTrue(cfg["hide_titlebar"])
         self.assertTrue(cfg["topmost"])
+
+    def test_v2_file_gets_new_defaults(self):
+        raw = self.v1_settings()
+        raw["version"] = 2
+        raw["hide_titlebar"] = False
+        raw["topmost"] = False
+        cfg = settings.validate(raw)
+        self.assertEqual(cfg["version"], settings.SETTINGS_VERSION)
+        self.assertEqual(cfg["school_name"], "宁波市四眼碶小学樱花校区")
+        self.assertEqual(
+            cfg["layout"],
+            {"width": 548, "height": 416, "font_size": 16, "row_spacing": 44},
+        )
+        self.assertEqual(cfg["classes"], [3, 4, 4, 4, 4, 4])
+        self.assertEqual(cfg["show"], {"begin": "15:00", "end": "16:30"})
+        self.assertEqual(cfg["hotkey"], "F10")
+        self.assertFalse(cfg["hide_titlebar"])
+        self.assertFalse(cfg["topmost"])
+
+    def test_v2_file_is_rewritten_as_v3(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "settings.json")
+            raw = self.v1_settings()
+            raw["version"] = 2
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(raw, handle)
+
+            loaded, warning = settings.load(path)
+            self.assertIsNone(warning)
+            self.assertEqual(loaded["school_name"], "宁波市四眼碶小学樱花校区")
+            with open(path, "r", encoding="utf-8") as handle:
+                on_disk = json.load(handle)
+            self.assertEqual(on_disk["version"], settings.SETTINGS_VERSION)
+            self.assertIn("layout", on_disk)
+            self.assertEqual(on_disk["layout"]["font_size"], 16)
 
     def test_missing_version_is_treated_as_v1(self):
         raw = self.v1_settings()

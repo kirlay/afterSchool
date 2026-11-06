@@ -6,10 +6,7 @@
 .DESCRIPTION
     首次运行会自动下载并静默安装 Python 3.8.10（32 位，仅当前用户，无需管理员），
     然后在 .venv38-win7 虚拟环境里安装 PyInstaller 5.13.2 并打包。
-    程序本体是单文件 exe；加 -OneDir 则输出多文件（文件夹）版本。
-
-.PARAMETER OneDir
-    输出多文件文件夹版（启动更快、杀软更友好）。
+    产物是单文件 exe，启动时会解压到系统临时目录。
 
 .PARAMETER ReinstallPython
     重新下载并安装 32 位 Python 3.8.10。
@@ -22,13 +19,9 @@
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\build_x86.ps1
-
-.EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\build_x86.ps1 -OneDir
 #>
 [CmdletBinding()]
 param(
-    [switch]$OneDir,
     [switch]$ReinstallPython,
     [switch]$SkipTests,
     [string]$PythonDir = ''
@@ -122,29 +115,17 @@ if (-not $SkipTests) {
     }
 }
 
-$env:ASCHOOL_ONEDIR = if ($OneDir) { '1' } else { '0' }
-try {
-    Write-Host '开始打包 ...'
-    # 先自己清理旧的 build 目录：PyInstaller 的 --clean 在个别机器上会因权限删不掉旧文件
-    Remove-Item (Join-Path $root 'build') -Recurse -Force -ErrorAction SilentlyContinue
-    & $venvPython -m PyInstaller --noconfirm over.spec
-    if ($LASTEXITCODE -ne 0) {
-        throw 'PyInstaller 打包失败'
-    }
-}
-finally {
-    Remove-Item Env:\ASCHOOL_ONEDIR -ErrorAction SilentlyContinue
+Write-Host '开始打包 ...'
+# 先自己清理旧的 build 目录：PyInstaller 的 --clean 在个别机器上会因权限删不掉旧文件
+Remove-Item (Join-Path $root 'build') -Recurse -Force -ErrorAction SilentlyContinue
+& $venvPython -m PyInstaller --noconfirm over.spec
+if ($LASTEXITCODE -ne 0) {
+    throw 'PyInstaller 打包失败'
 }
 
 $dist = Join-Path $root 'dist'
-if ($OneDir) {
-    $targetDir = Join-Path $dist '放学情况'
-    $exe = Join-Path $targetDir '放学情况.exe'
-}
-else {
-    $targetDir = $dist
-    $exe = Join-Path $dist '放学情况.exe'
-}
+$targetDir = $dist
+$exe = Join-Path $dist '放学情况.exe'
 if (-not (Test-Path $exe)) {
     throw "没有找到打包结果：$exe"
 }
@@ -171,12 +152,6 @@ Write-Host '打包完成：'
 Write-Host ("  程序：{0}" -f $info.FullName)
 Write-Host ("  大小：{0:N1} MB" -f ($info.Length / 1MB))
 Write-Host '  架构：32 位（兼容 Win7 SP1 32/64 位）'
-if ($OneDir) {
-    Write-Host '  形态：文件夹版（启动不解压临时目录，推荐给门卫电脑）'
-    Write-Host ("  部署：把整个「放学情况」文件夹一起复制，双击里面的 exe")
-}
-else {
-    Write-Host '  形态：单文件版（每次启动会解压到 %TEMP%）'
-    Write-Host ("  同目录需要一起复制：xb.ico、logo.png、部署说明.txt")
-}
+Write-Host '  形态：单文件版（启动时解压到系统临时目录，目标机 %TEMP% 必须可用）'
+Write-Host '  同目录需要一起复制：xb.ico、logo.png、部署说明.txt'
 exit 0

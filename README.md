@@ -7,13 +7,15 @@
 - 班级数可设置（现在一年级 3 个班，共 23 班）；
 - 显示时段可设置，到点自动显示，时段外最小化到任务栏；
 - 每天定时复位（默认上午 9:00，时间可设置、也可以关闭）；
+- 校名可设置（默认「宁波市四眼碶小学樱花校区」）；
+- 窗口宽度/高度（像素）、字号（磅）、行距（像素）都可以在设置里改；
 - 有标题栏、默认不置顶：窗口仍是普通窗口（任务栏有图标、可最小化），
   但默认把标题栏顶到屏幕外，内容贴屏幕左上角；可拖动并记住位置；
 - 窗口一出现光标就在输入框，直接输入班号即可；
 - 窗口图标 `xb.ico` 和屏幕 logo `logo.png` 是外置文件，可随时替换；
 - 只有快捷键入口：`F9` 设置、`F1` 帮助；
-- 打包成 **32 位 exe**，可在门卫的 Windows 7 SP1 32 位机器上运行；
-- GitHub Actions 自动构建，不用再到 32 位电脑上打包。
+- 打包成 **32 位单文件 exe**，可在门卫的 Windows 7 SP1 32 位机器上运行；
+- GitHub Actions 可手动触发构建。
 
 ## 界面与操作
 
@@ -51,6 +53,10 @@
 
 | 项目 | 说明 |
 |---|---|
+| 校名 | 显示在窗口顶部，默认「宁波市四眼碶小学樱花校区」，留空只显示「放学情况」 |
+| 窗口宽度 / 高度 | 像素，默认 548×416 |
+| 字号 | 班级文字磅值，默认 16；标题自动 +4，提示自动 -4 |
+| 行距 | 行与行之间的像素，默认 44 |
 | 班级数 | 每个年级 0–12 个班，0 表示没有这个年级 |
 | 显示时段 | 开始 / 结束时间（`HH:MM`），结束必须晚于开始，不支持跨零点 |
 | 校准间隔 | 10–3600 秒，默认 120；越大越省电，到点仍准时切换 |
@@ -60,16 +66,20 @@
 | 隐藏时自动复位 | 窗口最小化到任务栏时是否把所有班级恢复成未放学 |
 | 窗口位置复位 | 把窗口移回屏幕左上角 |
 
+字号调大时，窗口宽度/高度和行距要一起调大，否则文字会挤在一起。
+
 设置保存在 **exe 同目录的 `settings.json`**（该目录不可写时用 `%APPDATA%\AfterSchool\settings.json`）。
 更新程序时保留这个文件，设置就不会丢。
 
 ```json
 {
-  "version": 2,
+  "version": 3,
+  "school_name": "宁波市四眼碶小学樱花校区",
   "classes": [3, 4, 4, 4, 4, 4],
   "show": {"begin": "14:50", "end": "16:25"},
   "check_interval_seconds": 120,
   "daily_reset": {"enabled": true, "time": "09:00"},
+  "layout": {"width": 548, "height": 416, "font_size": 16, "row_spacing": 44},
   "hide_titlebar": false,
   "topmost": false,
   "reset_on_hide": true,
@@ -138,9 +148,7 @@ powershell -ExecutionPolicy Bypass -File .\build_x86.ps1
 
 - 第一次运行会自动下载并静默安装 Python 3.8.10（32 位，仅当前用户，不需要管理员权限）；
 - 自动创建 `.venv38-win7`，安装依赖、跑单元测试、打包；
-- 产物（单文件）：`dist\放学情况.exe` + 同目录的 `xb.ico`、`logo.png`、`部署说明.txt`；
-- 产物（文件夹版，推荐给门卫机）：加 `-OneDir`，产物在 `dist\放学情况\`，启动更快、
-  **完全不解压到临时目录**，不会出现“cannot create temporary directory”；
+- 产物：`dist\放学情况.exe`（单文件）+ 同目录的 `xb.ico`、`logo.png`、`部署说明.txt`；
 - 脚本最后会校验 exe 是 32 位（PE machine = 0x014C），不是就报错。
 
 已有 32 位 Python 3.8 的话可以指定目录：`-PythonDir "D:\Python38-32"`。
@@ -150,18 +158,8 @@ powershell -ExecutionPolicy Bypass -File .\build_x86.ps1
 
 ## 部署到门卫电脑
 
-### 方式一：文件夹版（推荐）
-
-1. 把**整个** `放学情况` 文件夹复制到电脑上，例如 `D:\放学\放学情况\`；
-2. 双击里面的 `放学情况.exe`（第一次会生成 `settings.json`）；
-3. 升级时替换整个文件夹，但要保留 `settings.json`。
-
-文件夹版不解压临时目录，启动快，也不会出现“cannot create temporary directory”。
-
-### 方式二：单文件版
-
-1. 把 `放学情况.exe`、`xb.ico`、`logo.png` 复制到同一个文件夹（例如 `D:\放学\`）；
-2. 双击 `放学情况.exe`；
+1. 把 `放学情况.exe`、`xb.ico`、`logo.png`、`部署说明.txt` 复制到同一个文件夹（例如 `D:\放学\`）；
+2. 双击 `放学情况.exe`（第一次会生成 `settings.json`）；
 3. 需要「设置」快捷方式时，新建快捷方式指向：
    `"D:\放学\放学情况.exe" --settings`
 4. 升级时只替换 exe，保留 `settings.json`。
@@ -171,23 +169,17 @@ powershell -ExecutionPolicy Bypass -File .\build_x86.ps1
 - 需要 **Win7 SP1**；
 - 如果提示缺少 `api-ms-win-crt-runtime-l1-1-0.dll`，安装 KB2999226 或 `vc_redist.x86.exe`（微软官网可下载）；
 - 单文件 exe 每次启动都要解压到 `%TEMP%`，老机器可能要等几秒；
-  如果弹出 `INTERNAL ERROR: cannot create temporary directory!`，改用文件夹版（见常见问题）；
+  如果弹出 `INTERNAL ERROR: cannot create temporary directory!`，说明目标机临时目录不可用（见常见问题）；
 - 程序是普通窗口，任务栏里能看到「放学情况」；时段外会最小化到任务栏，点它可还原；
 - 重复启动会提示「已经在运行」，不会开出第二个窗口。
 
-## GitHub Actions 自动构建
+## GitHub Actions 构建
 
-推送到 `main` 分支后，GitHub 会自动：
+workflow 改为**手动触发**（push 代码不会自动打包）：
 
-1. 用 32 位 Python 3.8 安装依赖；
-2. 跑单元测试；
-3. 分别打**单文件版**和**文件夹版**，并校验都是 32 位；
-4. 上传两个构建产物（artifact，保留 90 天）：
-   - `after-school-win7-x86-onefile`（单文件 zip）
-   - `after-school-win7-x86-onedir`（文件夹版 zip，门卫机推荐）
-
-下载位置：仓库 → **Actions** → 最新的 `build-win7-x86` → 页面底部 **Artifacts**。
-也可以手动触发：Actions → `build-win7-x86` → **Run workflow**。
+1. 仓库 → **Actions** → `build-win7-x86` → **Run workflow**；
+2. 用 32 位 Python 3.8 安装依赖、跑单元测试、打包并校验 32 位；
+3. 上传 `after-school-win7-x86.zip`（单文件 exe + xb.ico + logo.png + 部署说明，保留 90 天）。
 
 ## 目录结构
 
@@ -197,6 +189,7 @@ over-black/
 ├─ aschool/
 │  ├─ settings.py          # 设置：默认值、校验、读写、路径
 │  ├─ schedule.py          # 显示时段与下次切换时间（纯函数）
+│  ├─ layout.py            # 窗口尺寸、字号、行列位置计算（纯函数）
 │  ├─ hotkey.py            # 快捷键解析与全局轮询
 │  ├─ winutil.py           # 单实例互斥体、异常日志
 │  └─ app.py               # 主窗口、设置窗口、帮助窗口
@@ -230,18 +223,18 @@ over-black/
 看程序同目录的 `error.log`（带时间戳和堆栈）。
 
 **双击 exe 弹“INTERNAL ERROR: cannot create temporary directory!”？**
-这是单文件版解压到系统临时目录失败，发生在程序本身运行之前，跟设置和代码无关。处理顺序：
-1. 改用**文件夹版**（整个 `放学情况` 文件夹复制过去，双击里面的 exe），完全不依赖临时目录；
-2. 仍想用单文件版的话：`Win+R` 输入 `%TEMP%` 看能不能打开、能不能新建文件，磁盘是否还有空间；
-   也可以写一个 `启动.bat`，先把 `TEMP`/`TMP` 指到程序目录下的 `temp` 文件夹再启动 exe。
+单文件 exe 启动时要先把自身解压到系统临时目录，失败会弹这个（发生在程序运行之前，跟设置无关）。处理：
+1. `Win+R` 输入 `%TEMP%`，确认能打开、能新建文件，检查磁盘空间；
+2. 临时应急：写一个 `启动.bat`，先把 `TEMP`/`TMP` 指到程序目录下的 `temp` 文件夹再启动 exe。
 
 **想双开？**
 不允许：第二次启动会提示「已经在运行」。
 
 ## 版本
 
-- **2.2.1** — 打包方式调整：同时提供文件夹版（不解压临时目录），解决启动报
-  “cannot create temporary directory”；新增 `部署说明.txt`。
+- **2.3.0** — 新增校名设置；窗口宽度/高度（像素）、字号（磅）、行距（像素）可设置；
+  打包恢复为单文件版。
+- **2.2.1** — 打包方式调整：新增 `部署说明.txt`。
 - **2.2.0** — 新增每天定时复位（默认 09:00，时间可设置/关闭）。
 - **2.1.0** — 恢复标题栏与任务栏（时段外最小化）、窗口出现时自动聚焦输入框、默认不置顶，
   标题栏默认顶到屏幕外、旧版设置文件自动升级。

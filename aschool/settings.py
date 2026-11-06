@@ -7,6 +7,7 @@ import sys
 import time
 
 from . import hotkey
+from . import layout
 from . import schedule
 
 APP_DIR_NAME = "AfterSchool"
@@ -20,14 +21,22 @@ GRADE_NAMES = ("一", "二", "三", "四", "五", "六")
 # 设置文件版本：
 #   1 = 2026-11 首版（无标题栏、窗口置顶）
 #   2 = 恢复标题栏与任务栏、默认不置顶
-SETTINGS_VERSION = 2
+#   3 = 校名、窗口宽高、字号、行距改为显式数值
+SETTINGS_VERSION = 3
 
 DEFAULT = {
     "version": SETTINGS_VERSION,
+    "school_name": "宁波市四眼碶小学樱花校区",
     "classes": [3, 4, 4, 4, 4, 4],
     "show": {"begin": "14:50", "end": "16:25"},
     "check_interval_seconds": 120,
     "daily_reset": {"enabled": True, "time": "09:00"},
+    "layout": {
+        "width": layout.DEFAULT_WIDTH,
+        "height": layout.DEFAULT_HEIGHT,
+        "font_size": layout.DEFAULT_FONT_SIZE,
+        "row_spacing": layout.DEFAULT_ROW_SPACING,
+    },
     "hide_titlebar": False,
     "topmost": False,
     "reset_on_hide": True,
@@ -155,6 +164,38 @@ def _validate_daily_reset(raw):
     return {"enabled": enabled, "time": schedule.format_hhmm(moment)}
 
 
+def _validate_school_name(raw):
+    if raw is None:
+        raw = ""
+    if not isinstance(raw, str):
+        raise SettingsError("校名必须是文字")
+    name = raw.strip()
+    if len(name) > 40:
+        raise SettingsError("校名最多 40 个字")
+    return name
+
+
+def _validate_layout(raw):
+    if not isinstance(raw, dict):
+        raw = {}
+
+    def read_number(key, label, low, high, default):
+        try:
+            value = int(raw.get(key, default))
+        except (TypeError, ValueError):
+            raise SettingsError("%s必须是整数" % label)
+        if value < low or value > high:
+            raise SettingsError("%s必须在 %s–%s 之间" % (label, low, high))
+        return value
+
+    return {
+        "width": read_number("width", "窗口宽度", 300, 1920, layout.DEFAULT_WIDTH),
+        "height": read_number("height", "窗口高度", 240, 1080, layout.DEFAULT_HEIGHT),
+        "font_size": read_number("font_size", "字号", 10, 48, layout.DEFAULT_FONT_SIZE),
+        "row_spacing": read_number("row_spacing", "行距", 20, 150, layout.DEFAULT_ROW_SPACING),
+    }
+
+
 def _validate_window(raw):
     if not isinstance(raw, dict):
         raw = {}
@@ -188,14 +229,16 @@ def validate(raw):
     if not isinstance(raw, dict):
         raise SettingsError("设置内容必须是 JSON 对象")
 
-    migrating = _stored_version(raw) < SETTINGS_VERSION
+    migrating = _stored_version(raw) < 2
     result = default_settings()
+    result["school_name"] = _validate_school_name(raw.get("school_name", result["school_name"]))
     result["classes"] = _validate_classes(raw.get("classes", result["classes"]))
     result["show"] = _validate_show(raw.get("show", {}), result["show"])
     result["check_interval_seconds"] = _validate_interval(
         raw.get("check_interval_seconds", result["check_interval_seconds"])
     )
     result["daily_reset"] = _validate_daily_reset(raw.get("daily_reset", result["daily_reset"]))
+    result["layout"] = _validate_layout(raw.get("layout", result["layout"]))
 
     for flag in ("hide_titlebar", "topmost", "reset_on_hide"):
         value = raw.get(flag, result[flag])
