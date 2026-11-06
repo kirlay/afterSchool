@@ -9,6 +9,7 @@ venv/
 build/
 dist/
 *.manifest
+.build-temp/
 
 # 运行时生成（每台机器自己的配置与日志）
 settings.json

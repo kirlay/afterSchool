@@ -1,0 +1,204 @@
+# 樱花校区放学情况
+
+宁波市四眼碶小学樱花校区电子大屏用的「放学情况」显示程序。
+
+原版（2024 年）是单文件 `over.py`，班级数和放学时间写死在代码里。v2 做了这些改动：
+
+- 班级数可设置（现在一年级 3 个班，共 23 班）；
+- 显示时段可设置，到点自动显示 / 隐藏；
+- 去掉标题栏，窗口置顶、默认在屏幕左上角，可拖动并记住位置；
+- 窗口图标 `xb.ico` 和屏幕 logo `logo.png` 是外置文件，可随时替换；
+- 只有快捷键入口：`F9` 设置、`F1` 帮助；
+- 打包成 **32 位 exe**，可在门卫的 Windows 7 SP1 32 位机器上运行；
+- GitHub Actions 自动构建，不用再到 32 位电脑上打包。
+
+## 界面与操作
+
+| 操作 | 效果 |
+|---|---|
+| 输入 `101` 回车 | 一1班变红并显示「一1班放学」 |
+| 输入 `-101` 回车 | 一1班恢复绿色「未放学」 |
+| 输入 `000` 回车 | 确认后所有班级复位为未放学 |
+| `F9` | 打开设置（可改） |
+| `F1` | 打开帮助 |
+| 按住窗口顶部拖动 | 移动窗口，松手后保存位置 |
+
+编号规则：`年级 + 0 + 班号`，如 `101`、`102`；二年级是 `201`、`202`……
+输入框支持全角数字（`１０１`）和减号，回车后自动清空并保持焦点。
+
+显示时段内窗口自动出现，时段外自动隐藏；隐藏时默认把所有班级复位（可在设置里关）。
+
+## 快捷键说明
+
+- 默认 `F9` 打开设置，可在设置里改成 `F10`/`F11`/`F12`/`Ctrl+Alt+F9` 等；
+- `Fn` **不能**用作快捷键：它由键盘固件/厂商驱动处理，Windows 收不到；
+- 快捷键是全局的（`GetAsyncKeyState` 轮询），窗口隐藏或没有焦点时同样有效；
+- 退出程序：`F9` 打开设置 → 点「退出程序」。
+
+如果快捷键被其它软件占用，改 `settings.json` 里的 `hotkey` 或设置界面里换一个即可。
+
+## 设置
+
+设置窗口包含：
+
+| 项目 | 说明 |
+|---|---|
+| 班级数 | 每个年级 0–12 个班，0 表示没有这个年级 |
+| 显示时段 | 开始 / 结束时间（`HH:MM`），结束必须晚于开始，不支持跨零点 |
+| 校准间隔 | 10–3600 秒，默认 120；越大越省电，到点仍准时切换 |
+| 设置快捷键 | 打开设置的快捷键 |
+| 窗口置顶 | 是否始终显示在其它窗口上面 |
+| 隐藏时自动复位 | 窗口自动隐藏时是否把所有班级恢复成未放学 |
+| 窗口位置复位 | 把窗口移回屏幕左上角 |
+
+设置保存在 **exe 同目录的 `settings.json`**（该目录不可写时用 `%APPDATA%\AfterSchool\settings.json`）。
+更新程序时保留这个文件，设置就不会丢。
+
+```json
+{
+  "version": 1,
+  "classes": [3, 4, 4, 4, 4, 4],
+  "show": {"begin": "14:50", "end": "16:25"},
+  "check_interval_seconds": 120,
+  "hide_titlebar": true,
+  "topmost": true,
+  "reset_on_hide": true,
+  "hotkey": "F9",
+  "window": {"x": 0, "y": 0}
+}
+```
+
+`hide_titlebar` 没有放进设置界面（避免误操作后找不回窗口）；需要排查问题时可以手动改成 `false`，或用命令 `放学情况.exe --decorated`。
+
+## 图标与 logo
+
+| 文件 | 用途 | 替换方式 |
+|---|---|---|
+| `xb.ico` | 窗口 / 任务栏图标 | 覆盖后重启程序 |
+| `logo.png` | 屏幕左上角 60×60 logo | 覆盖后重启程序 |
+
+`logo.png` 由 `xb.ico` 生成（开发期一次性操作）：
+
+```bash
+python -m pip install pillow
+python tools/make_assets.py
+```
+
+exe 文件自身的图标在打包时嵌入，换 exe 的显示图标需要重新打包。
+
+## 从源码运行
+
+需要 Python 3.8 及以上（自带 tkinter 即可，不需要 Pillow）：
+
+```bash
+python over.py
+```
+
+调试参数：
+
+```text
+python over.py --settings   启动后直接打开设置
+python over.py --show       本次运行不按时间隐藏
+python over.py --now 15:00  把当前时间模拟成 15:00
+python over.py --decorated  显示标题栏（排查问题用）
+```
+
+单元测试：
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+## 打包（32 位，兼容 Win7）
+
+门卫电脑是 Windows 7 32 位。64 位 exe 在 32 位系统上不能运行；另外 Python 3.9 起不再支持 Win7。
+所以 Win7 版用 **32 位 Python 3.8.10 + PyInstaller 5.13.2** 打包，一个包同时兼容 32/64 位 Win7 和 Win10/11。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_x86.ps1
+```
+
+- 第一次运行会自动下载并静默安装 Python 3.8.10（32 位，仅当前用户，不需要管理员权限）；
+- 自动创建 `.venv38-win7`，安装依赖、跑单元测试、打包；
+- 产物：`dist\放学情况.exe`（单文件）+ 同目录的 `xb.ico`、`logo.png`；
+- 多文件（文件夹）版本：加 `-OneDir`，产物在 `dist\放学情况\`，启动更快、杀软更友好；
+- 脚本最后会校验 exe 是 32 位（PE machine = 0x014C），不是就报错。
+
+已有 32 位 Python 3.8 的话可以指定目录：`-PythonDir "D:\Python38-32"`。
+
+> 注意：`build_x86.ps1` 需要保存成 **UTF-8 with BOM** 编码（Windows PowerShell 5.1 才能正确读中文）。
+> 用 VS Code 编辑后，右下角编码选 "UTF-8 with BOM" 再保存。
+
+## 部署到门卫电脑
+
+1. 把 `放学情况.exe`、`xb.ico`、`logo.png` 三个文件复制到同一个文件夹（例如 `D:\放学\`）；
+2. 双击 `放学情况.exe` 运行（第一次会生成 `settings.json`）；
+3. 需要「设置」快捷方式时，新建快捷方式指向：
+   `"D:\放学\放学情况.exe" --settings`
+4. 升级时只替换 `放学情况.exe`，保留 `settings.json`。
+
+### Windows 7 注意
+
+- 需要 **Win7 SP1**；
+- 如果提示缺少 `api-ms-win-crt-runtime-l1-1-0.dll`，安装 KB2999226 或 `vc_redist.x86.exe`（微软官网可下载）；
+- 单文件 exe 首次启动会解压到 `%TEMP%`，老机器可能要等几秒；若被杀软拦截，加白名单或改用 `-OneDir` 文件夹版；
+- 程序没有任务栏图标（无标题栏窗口），看它是否在运行：按 `F1` 能弹出帮助就是在运行；重复启动会提示「已经在运行」。
+
+## GitHub Actions 自动构建
+
+推送到 `main` 分支后，GitHub 会自动：
+
+1. 用 32 位 Python 3.8 安装依赖；
+2. 跑单元测试；
+3. 打包并校验 32 位；
+4. 把 `放学情况.exe`、`xb.ico`、`logo.png` 打成 `after-school-win7-x86.zip` 上传为构建产物（artifact，保留 90 天）。
+
+下载位置：仓库 → **Actions** → 最新的 `build-win7-x86` → 页面底部 **Artifacts**。
+也可以手动触发：Actions → `build-win7-x86` → **Run workflow**。
+
+## 目录结构
+
+```
+over-black/
+├─ over.py                 # 程序入口（参数、单实例、启动界面）
+├─ aschool/
+│  ├─ settings.py          # 设置：默认值、校验、读写、路径
+│  ├─ schedule.py          # 显示时段与下次切换时间（纯函数）
+│  ├─ hotkey.py            # 快捷键解析与全局轮询
+│  ├─ winutil.py           # 单实例互斥体、异常日志
+│  └─ app.py               # 主窗口、设置窗口、帮助窗口
+├─ xb.ico / logo.png       # 外置图标与屏幕 logo
+├─ tools/make_assets.py    # 由 xb.ico 生成 logo.png（开发期）
+├─ tests/                  # 单元测试
+├─ over.spec               # PyInstaller 配置
+├─ build_x86.ps1           # 32 位打包脚本
+├─ requirements-win7.txt   # PyInstaller 5.13.2
+└─ .github/workflows/build-win7.yml
+```
+
+`ico.py`、`i2s.py`、`s2i.py`、`s2tk.py`、`tm.py` 是 2024 年的辅助脚本，原样保留，程序不再引用。
+
+## 常见问题
+
+**窗口到点没有出现？**
+检查 `settings.json` 的 `show` 时间，以及系统时间是否正确；按 `F1` 看帮助确认程序在运行。
+
+**按快捷键没反应？**
+可能是被其它软件占用（例如输入法、截图工具）。在设置里换一个组合，或改 `settings.json` 的 `hotkey`。
+
+**设置保存失败？**
+检查 exe 所在目录是否可写；不可写时会自动改用 `%APPDATA%\AfterSchool\`。
+
+**设置文件坏了？**
+程序会自动改名为 `settings.json.bak-时间戳` 并恢复默认设置，同时提示一次。
+
+**程序出错了？**
+看程序同目录的 `error.log`（带时间戳和堆栈）。
+
+**想双开？**
+不允许：第二次启动会提示「已经在运行」。
+
+## 版本
+
+- **2.0.0** — 设置功能、无标题栏、外置图标、全局快捷键、32 位 Win7 打包、自动构建。
+- 2024 原始版本 — `over.py` 单文件，班级数 24、显示时段 14:50–16:25 写死。

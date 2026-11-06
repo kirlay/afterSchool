@@ -1,0 +1,58 @@
+name: build-win7-x86
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 32 位 Python 3.8
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          architecture: 'x86'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-win7.txt
+
+      - name: 单元测试
+        run: python -m unittest discover -s tests -v
+
+      - name: 打包
+        run: python -m PyInstaller --noconfirm over.spec
+
+      - name: 校验 32 位并整理发布文件
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = 'dist/放学情况.exe'
+          if (-not (Test-Path $exe)) { throw "没有找到 $exe" }
+          $stream = [System.IO.File]::OpenRead($exe)
+          $reader = New-Object System.IO.BinaryReader($stream)
+          $stream.Position = 0x3C
+          $offset = $reader.ReadInt32()
+          $stream.Position = $offset + 4
+          $machine = $reader.ReadUInt16()
+          $reader.Close()
+          $stream.Close()
+          if ($machine -ne 0x14C) {
+            throw ("打包结果不是 32 位 exe（PE machine=0x{0:X4}）" -f $machine)
+          }
+          Copy-Item xb.ico, logo.png dist -Force
+          Compress-Archive -Path $exe, 'xb.ico', 'logo.png' -DestinationPath 'dist/after-school-win7-x86.zip' -Force
+          Get-Item 'dist/after-school-win7-x86.zip' | Format-List FullName, Length
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: after-school-win7-x86
+          path: dist/after-school-win7-x86.zip
+          if-no-files-found: error
