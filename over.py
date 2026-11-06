@@ -16,7 +16,8 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="樱花校区放学情况 v%s" % __version__)
     parser.add_argument("--settings", action="store_true", help="启动后直接打开设置窗口")
     parser.add_argument("--show", action="store_true", help="本次运行不按时间自动隐藏")
-    parser.add_argument("--decorated", action="store_true", help="显示标题栏（排查问题用）")
+    parser.add_argument("--decorated", action="store_true", help="强制显示标题栏（默认已显示）")
+    parser.add_argument("--no-titlebar", dest="no_titlebar", action="store_true", help="隐藏标题栏（排查问题用）")
     parser.add_argument("--now", metavar="HH:MM", help="把当前时间模拟成指定时刻（调试用）")
     return parser.parse_args(argv)
 
@@ -55,6 +56,7 @@ def main(argv=None):
             "settings": args.settings,
             "force_show": args.show,
             "decorated": args.decorated,
+            "no_titlebar": args.no_titlebar,
             "now": args.now,
         },
     )

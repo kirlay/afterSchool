@@ -57,3 +57,48 @@ def touch_flag(path):
             handle.write("%d\n" % os.getpid())
     except OSError:
         pass
+
+
+def bring_to_front(window):
+    """尽量把窗口带到前台；Windows 可能拒绝 SetForegroundWindow，失败就忽略。"""
+    try:
+        window.lift()
+    except Exception:
+        pass
+    if sys.platform != "win32":
+        return
+    try:
+        hwnd = ctypes.windll.user32.GetAncestor(window.winfo_id(), 2)  # GA_ROOT
+        if hwnd:
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+
+
+def caption_height():
+    """标题栏 + 上边框的高度（像素），用来把标题栏放到屏幕外。"""
+    if sys.platform != "win32":
+        return 0
+    try:
+        user32 = ctypes.windll.user32
+        return int(
+            user32.GetSystemMetrics(4)   # SM_CYCAPTION
+            + user32.GetSystemMetrics(33)  # SM_CYSIZEFRAME
+            + user32.GetSystemMetrics(92)  # SM_CXPADDEDBORDER
+        )
+    except Exception:
+        return 0
+
+
+def frame_border_width():
+    """窗口左右边框的宽度（像素）。"""
+    if sys.platform != "win32":
+        return 0
+    try:
+        user32 = ctypes.windll.user32
+        return int(
+            user32.GetSystemMetrics(32)   # SM_CXSIZEFRAME
+            + user32.GetSystemMetrics(92)  # SM_CXPADDEDBORDER
+        )
+    except Exception:
+        return 0

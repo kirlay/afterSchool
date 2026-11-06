@@ -27,11 +27,12 @@ POLL_INTERVAL_MS = 150
 POLL_FLAG_EVERY = 7
 STARTUP_SHOW_MS = 3000
 
-HELP_TEXT = """樱花校区放学情况  v2.0
+HELP_TEXT = """樱花校区放学情况  v2.1
 
 一、班号怎么输入
     101 = 一年级 1 班，102 = 一年级 2 班，以此类推；
     二年级是 201、202……，班级数以设置里的为准。
+    窗口出现时光标会自动停在输入框，直接输入即可。
     输入 101 后按回车，一1班变红并显示“放学”。
 
 二、输错了怎么撤销
@@ -43,21 +44,23 @@ HELP_TEXT = """樱花校区放学情况  v2.0
 
 四、打开设置（快捷键 {hotkey}）
     默认 F9；也可以是 F10、F11、F12，或 Ctrl+Alt+F9 这类组合，
-    在设置里可以改。窗口隐藏时按同样有效。
+    在设置里可以改。窗口最小化到任务栏时按同样有效。
     班级数：每个年级 0–12 个班，0 表示没有这个年级；
-    显示时段：窗口在这个时间段内显示，其余时间自动隐藏；
+    显示时段：窗口在这个时间段内显示，其余时间最小化到任务栏；
     校准间隔：默认 120 秒，越大越省电，到点仍会准时切换；
     还可以设置窗口置顶、隐藏时自动复位、窗口位置复位。
 
 五、打开本帮助（快捷键 F1）
-    按 F1 随时打开，窗口隐藏时也能按。
+    按 F1 随时打开，窗口最小化时也能按。
 
 六、退出程序
-    按 {hotkey} 打开设置，点右下角的“退出程序”。
+    按 {hotkey} 打开设置，点右下角的“退出程序”；也可以点窗口右上角的 ×。
 
-七、显示时段
-    到开始时间窗口自动出现，到结束时间自动隐藏；
-    在设置里改完时间、保存后立即生效。
+七、显示时段与任务栏
+    到开始时间窗口自动出现（标题栏默认在屏幕外，任务栏里能看到“放学情况”）；
+    到结束时间自动最小化到任务栏，不是消失；
+    点任务栏上的“放学情况”可以随时还原查看；
+    本程序不会一直压在最上面，点其它大屏软件，它会到前面来。
 
 八、替换图标
     把新的 xb.ico 覆盖到程序所在文件夹，重启程序即可；
@@ -101,11 +104,13 @@ class Application(object):
 
     def _setup_window(self):
         root = self.root
-        root.title("放学情况")
+        root.title("放学情况（樱花校区）")
         root.configure(bg=BG)
         root.resizable(width=False, height=False)
-        if self.cfg["hide_titlebar"] and not self.options.get("decorated"):
+        self._hide_titlebar = self._resolve_hide_titlebar()
+        if self._hide_titlebar:
             root.overrideredirect(True)
+        root.withdraw()
         self._apply_topmost()
         self._load_icon()
 
@@ -167,6 +172,7 @@ class Application(object):
         self.entry = tk.Entry(self.root, textvariable=self.entry_var, width=15, font=FONT_HINT, justify="center")
         self.entry.bind("<Return>", self.on_enter)
         self.root.bind("<Button-1>", self._on_click)
+        self.root.bind("<FocusIn>", self._on_focus_in)
 
     # ------------------------------------------------------------------ 布局
 
@@ -177,10 +183,49 @@ class Application(object):
         width = max(548, 179 + 123 * (columns - 1))
         entry_y = 140 + 44 * (rows - 1)
         height = max(416, entry_y + 56)
-        x = int(self.cfg["window"].get("x", 0))
-        y = int(self.cfg["window"].get("y", 0))
-        self.root.geometry("%dx%d+%d+%d" % (width, height, x, y))
+        # 配置里存的是"客户区"左上角：默认 0,0 时客户区贴屏幕左上角，
+        # 标题栏和边框被挤到屏幕外（任务栏里仍然正常显示）。
+        # --decorated 用于排查问题：按"窗口左上角"摆放，标题栏可见。
+        client_x = int(self.cfg["window"].get("x", 0))
+        client_y = int(self.cfg["window"].get("y", 0))
+        if self.options.get("decorated"):
+            left = top = 0
+        else:
+            left, top = self._frame_offsets()
+        self.root.geometry("%dx%d+%d+%d" % (width, height, client_x - left, client_y - top))
         return entry_y
+
+    def _frame_offsets(self):
+        """边框/标题栏占掉的像素：能实测就实测，否则用系统度量。"""
+        if self._hide_titlebar:
+            return 0, 0
+        try:
+            if self.root.winfo_ismapped():
+                left = self.root.winfo_rootx() - self.root.winfo_x()
+                top = self.root.winfo_rooty() - self.root.winfo_y()
+                if left >= 0 and top > 0:
+                    return left, top
+        except tk.TclError:
+            pass
+        return winutil.frame_border_width(), winutil.caption_height()
+
+    def _align_after_show(self):
+        """窗口真正显示后，按实测边框把客户区对齐到配置的位置。"""
+        if self._hide_titlebar or self.options.get("decorated"):
+            return
+        try:
+            if not self.root.winfo_ismapped():
+                return
+        except tk.TclError:
+            return
+        client_x = int(self.cfg["window"].get("x", 0))
+        client_y = int(self.cfg["window"].get("y", 0))
+        left, top = self._frame_offsets()
+        if self.root.winfo_rootx() != client_x or self.root.winfo_rooty() != client_y:
+            try:
+                self.root.geometry("+%d+%d" % (client_x - left, client_y - top))
+            except tk.TclError:
+                pass
 
     def _rebuild(self):
         for _code, label, _grade, _no in self.labels:
@@ -290,22 +335,46 @@ class Application(object):
         self._visible = True
         self.root.deiconify()
         self._apply_topmost()
-        try:
-            self.root.lift()
-        except tk.TclError:
-            pass
-        try:
-            self.root.focus_force()
-        except tk.TclError:
-            pass
-        self.entry.focus_set()
+        winutil.bring_to_front(self.root)
+        self._focus_entry()
+        # Win7 上窗口映射/前台切换有延迟，多补几次
+        self.root.after(80, self._align_after_show)
+        self.root.after(150, self._focus_entry)
+        self.root.after(600, self._focus_entry)
 
     def hide_window(self):
         self._visible = False
         if self.cfg["reset_on_hide"]:
             self.reset_all()
         self.entry_var.set("")
-        self.root.withdraw()
+        if self._hide_titlebar:
+            self.root.withdraw()
+        else:
+            # 有标题栏时最小化到任务栏，老师一眼能看到程序在运行
+            self.root.iconify()
+
+    def _resolve_hide_titlebar(self):
+        hide = bool(self.cfg["hide_titlebar"])
+        if self.options.get("decorated"):
+            hide = False
+        if self.options.get("no_titlebar"):
+            hide = True
+        return hide
+
+    def _focus_entry(self):
+        if not self._visible or self._dialog_open():
+            return
+        try:
+            if not self.root.winfo_exists():
+                return
+            self.entry.focus_force()
+            self.entry.icursor("end")
+        except tk.TclError:
+            pass
+
+    def _on_focus_in(self, event):
+        if event.widget is self.root and self._visible and not self._dialog_open():
+            self.entry.focus_set()
 
     # ------------------------------------------------------------------ 定时
 
@@ -402,9 +471,14 @@ class Application(object):
         self._help_window = HelpWindow(self)
 
     def _reveal_for_dialog(self):
-        # 主窗口被隐藏时，弹窗要依附的父窗口也得显示出来，否则弹窗可能跟着不可见
+        # 主窗口被隐藏/最小化时先还原；已经在显示的话也抬一下，别让弹窗藏在别的软件后面
         if not self._visible:
             self.show_window()
+        else:
+            try:
+                self.root.lift()
+            except tk.TclError:
+                pass
 
     def on_dialog_closed(self):
         self.root.after(200, self.tick)
@@ -462,7 +536,8 @@ class Application(object):
         if not self._drag:
             return
         self._drag = None
-        self.cfg["window"] = {"x": self.root.winfo_x(), "y": self.root.winfo_y()}
+        # 保存"客户区"位置，重启后标题栏依旧在屏幕外的相对位置
+        self.cfg["window"] = {"x": self.root.winfo_rootx(), "y": self.root.winfo_rooty()}
         try:
             st.save(self.cfg)
         except Exception as exc:
@@ -596,7 +671,7 @@ class SettingsDialog(tk.Toplevel):
         self.topmost_var = tk.BooleanVar(value=self.app.cfg["topmost"])
         tk.Checkbutton(
             extra_frame,
-            text="窗口置顶",
+            text="窗口置顶（一般不用勾）",
             variable=self.topmost_var,
             font=FONT_HINT,
             bg=BG,
@@ -651,7 +726,7 @@ class SettingsDialog(tk.Toplevel):
     def save(self):
         try:
             candidate = {
-                "version": self.app.cfg.get("version", 1),
+                "version": self.app.cfg.get("version", st.SETTINGS_VERSION),
                 "classes": [self._int_value(variable, "班级数") for variable in self.class_vars],
                 "show": {"begin": self.begin_var.get(), "end": self.end_var.get()},
                 "check_interval_seconds": self._int_value(self.interval_var, "校准间隔"),

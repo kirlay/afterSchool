@@ -13,11 +13,12 @@ from aschool import settings
 class DefaultTests(unittest.TestCase):
     def test_default_settings_are_valid(self):
         cfg = settings.validate(settings.default_settings())
+        self.assertEqual(cfg["version"], settings.SETTINGS_VERSION)
         self.assertEqual(cfg["classes"], [3, 4, 4, 4, 4, 4])
         self.assertEqual(cfg["show"], {"begin": "14:50", "end": "16:25"})
         self.assertEqual(cfg["check_interval_seconds"], 120)
-        self.assertTrue(cfg["hide_titlebar"])
-        self.assertTrue(cfg["topmost"])
+        self.assertFalse(cfg["hide_titlebar"])
+        self.assertFalse(cfg["topmost"])
         self.assertTrue(cfg["reset_on_hide"])
         self.assertEqual(cfg["hotkey"], "F9")
         self.assertEqual(cfg["window"], {"x": 0, "y": 0})
@@ -122,6 +123,68 @@ class ValidateTests(unittest.TestCase):
         cfg["future_option"] = 123
         clean = settings.validate(cfg)
         self.assertNotIn("future_option", clean)
+
+
+class MigrationTests(unittest.TestCase):
+    def v1_settings(self):
+        return {
+            "version": 1,
+            "classes": [3, 4, 4, 4, 4, 4],
+            "show": {"begin": "15:00", "end": "16:30"},
+            "check_interval_seconds": 60,
+            "hide_titlebar": True,
+            "topmost": True,
+            "reset_on_hide": False,
+            "hotkey": "F10",
+            "window": {"x": 5, "y": 6},
+        }
+
+    def test_v1_restores_titlebar_and_drops_topmost(self):
+        cfg = settings.validate(self.v1_settings())
+        self.assertEqual(cfg["version"], settings.SETTINGS_VERSION)
+        self.assertFalse(cfg["hide_titlebar"])
+        self.assertFalse(cfg["topmost"])
+
+    def test_v1_keeps_other_settings(self):
+        cfg = settings.validate(self.v1_settings())
+        self.assertEqual(cfg["classes"], [3, 4, 4, 4, 4, 4])
+        self.assertEqual(cfg["show"], {"begin": "15:00", "end": "16:30"})
+        self.assertEqual(cfg["check_interval_seconds"], 60)
+        self.assertFalse(cfg["reset_on_hide"])
+        self.assertEqual(cfg["hotkey"], "F10")
+        self.assertEqual(cfg["window"], {"x": 5, "y": 6})
+
+    def test_v2_respects_explicit_flags(self):
+        raw = self.v1_settings()
+        raw["version"] = 2
+        cfg = settings.validate(raw)
+        self.assertTrue(cfg["hide_titlebar"])
+        self.assertTrue(cfg["topmost"])
+
+    def test_missing_version_is_treated_as_v1(self):
+        raw = self.v1_settings()
+        del raw["version"]
+        cfg = settings.validate(raw)
+        self.assertFalse(cfg["hide_titlebar"])
+        self.assertFalse(cfg["topmost"])
+
+    def test_load_upgrades_file_on_disk(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "settings.json")
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(self.v1_settings(), handle)
+
+            loaded, warning = settings.load(path)
+            self.assertIsNone(warning)
+            self.assertFalse(loaded["hide_titlebar"])
+            self.assertFalse(loaded["topmost"])
+
+            with open(path, "r", encoding="utf-8") as handle:
+                on_disk = json.load(handle)
+            self.assertEqual(on_disk["version"], settings.SETTINGS_VERSION)
+            self.assertFalse(on_disk["hide_titlebar"])
+            self.assertFalse(on_disk["topmost"])
+            self.assertEqual(on_disk["show"], {"begin": "15:00", "end": "16:30"})
 
 
 class FileTests(unittest.TestCase):

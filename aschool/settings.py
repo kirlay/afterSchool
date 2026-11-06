@@ -17,13 +17,18 @@ FLAG_NAME = "request_settings.flag"
 
 GRADE_NAMES = ("一", "二", "三", "四", "五", "六")
 
+# 设置文件版本：
+#   1 = 2026-11 首版（无标题栏、窗口置顶）
+#   2 = 恢复标题栏与任务栏、默认不置顶
+SETTINGS_VERSION = 2
+
 DEFAULT = {
-    "version": 1,
+    "version": SETTINGS_VERSION,
     "classes": [3, 4, 4, 4, 4, 4],
     "show": {"begin": "14:50", "end": "16:25"},
     "check_interval_seconds": 120,
-    "hide_titlebar": True,
-    "topmost": True,
+    "hide_titlebar": False,
+    "topmost": False,
     "reset_on_hide": True,
     "hotkey": "F9",
     "window": {"x": 0, "y": 0},
@@ -151,11 +156,25 @@ def _validate_window(raw):
     return window
 
 
+def _stored_version(raw):
+    if not isinstance(raw, dict):
+        return 0
+    try:
+        return int(raw.get("version", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def validate(raw):
-    """校验并规范化设置，返回一份干净的新字典。"""
+    """校验并规范化设置，返回一份干净的新字典。
+
+    旧版（version < 2）文件会自动迁移：恢复标题栏、取消窗口置顶，
+    其余设置（班级数、时间、快捷键、窗口位置）原样保留。
+    """
     if not isinstance(raw, dict):
         raise SettingsError("设置内容必须是 JSON 对象")
 
+    migrating = _stored_version(raw) < SETTINGS_VERSION
     result = default_settings()
     result["classes"] = _validate_classes(raw.get("classes", result["classes"]))
     result["show"] = _validate_show(raw.get("show", {}), result["show"])
@@ -169,6 +188,10 @@ def validate(raw):
             raise SettingsError("%s 必须是 true 或 false" % flag)
         result[flag] = value
 
+    if migrating:
+        result["hide_titlebar"] = False
+        result["topmost"] = False
+
     try:
         _mods, _vk, canonical = hotkey.parse(str(raw.get("hotkey", result["hotkey"])))
     except hotkey.HotkeyError as exc:
@@ -180,7 +203,7 @@ def validate(raw):
 
 
 def load(path=None):
-    """读取设置，返回 (设置, 警告文本或 None)。"""
+    """读取设置，返回 (设置, 警告文本或 None)；旧版文件会自动升级并回写。"""
     path = path or settings_path()
     if not os.path.exists(path):
         return default_settings(), None
@@ -188,7 +211,13 @@ def load(path=None):
     try:
         with open(path, "r", encoding="utf-8") as handle:
             raw = json.load(handle)
-        return validate(raw), None
+        settings = validate(raw)
+        if _stored_version(raw) != settings["version"]:
+            try:
+                save(settings, path)
+            except OSError:
+                pass
+        return settings, None
     except Exception as exc:  # 语法错误、编码错误、校验失败都按损坏处理
         backup = "%s.bak-%s" % (path, time.strftime("%Y%m%d%H%M%S"))
         try:
