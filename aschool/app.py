@@ -343,6 +343,10 @@ class Application(object):
 
     def tick(self):
         self._tick_job = None
+        if self._dialog_open():
+            # 弹窗打开期间不要突然把主窗口藏掉
+            self._schedule_tick(60000)
+            return
         now = self._now()
         begin, end = self._begin_end()
         visible = self.options.get("force_show") or schedule.is_visible(now, begin, end)
@@ -386,6 +390,7 @@ class Application(object):
             self._settings_dialog.lift()
             self._settings_dialog.focus_force()
             return
+        self._reveal_for_dialog()
         self._settings_dialog = SettingsDialog(self)
 
     def show_help(self):
@@ -393,7 +398,16 @@ class Application(object):
             self._help_window.lift()
             self._help_window.focus_force()
             return
+        self._reveal_for_dialog()
         self._help_window = HelpWindow(self)
+
+    def _reveal_for_dialog(self):
+        # 主窗口被隐藏时，弹窗要依附的父窗口也得显示出来，否则弹窗可能跟着不可见
+        if not self._visible:
+            self.show_window()
+
+    def on_dialog_closed(self):
+        self.root.after(200, self.tick)
 
     # ------------------------------------------------------------------ 设置
 
@@ -666,6 +680,7 @@ class SettingsDialog(tk.Toplevel):
             pass
         self.app._settings_dialog = None
         self.destroy()
+        self.app.on_dialog_closed()
 
 
 class HelpWindow(tk.Toplevel):
@@ -721,3 +736,4 @@ class HelpWindow(tk.Toplevel):
     def close(self):
         self.app._help_window = None
         self.destroy()
+        self.app.on_dialog_closed()
