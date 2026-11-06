@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv*/
+venv/
+
+# PyInstaller 构建产物
+build/
+dist/
+*.manifest
+
+# 运行时生成（每台机器自己的配置与日志）
+settings.json
+settings.json.bak-*
+error.log
+request_settings.flag
+temp.ico
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
