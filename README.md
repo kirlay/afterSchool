@@ -138,8 +138,9 @@ powershell -ExecutionPolicy Bypass -File .\build_x86.ps1
 
 - 第一次运行会自动下载并静默安装 Python 3.8.10（32 位，仅当前用户，不需要管理员权限）；
 - 自动创建 `.venv38-win7`，安装依赖、跑单元测试、打包；
-- 产物：`dist\放学情况.exe`（单文件）+ 同目录的 `xb.ico`、`logo.png`；
-- 多文件（文件夹）版本：加 `-OneDir`，产物在 `dist\放学情况\`，启动更快、杀软更友好；
+- 产物（单文件）：`dist\放学情况.exe` + 同目录的 `xb.ico`、`logo.png`、`部署说明.txt`；
+- 产物（文件夹版，推荐给门卫机）：加 `-OneDir`，产物在 `dist\放学情况\`，启动更快、
+  **完全不解压到临时目录**，不会出现“cannot create temporary directory”；
 - 脚本最后会校验 exe 是 32 位（PE machine = 0x014C），不是就报错。
 
 已有 32 位 Python 3.8 的话可以指定目录：`-PythonDir "D:\Python38-32"`。
@@ -149,17 +150,28 @@ powershell -ExecutionPolicy Bypass -File .\build_x86.ps1
 
 ## 部署到门卫电脑
 
-1. 把 `放学情况.exe`、`xb.ico`、`logo.png` 三个文件复制到同一个文件夹（例如 `D:\放学\`）；
-2. 双击 `放学情况.exe` 运行（第一次会生成 `settings.json`）；
+### 方式一：文件夹版（推荐）
+
+1. 把**整个** `放学情况` 文件夹复制到电脑上，例如 `D:\放学\放学情况\`；
+2. 双击里面的 `放学情况.exe`（第一次会生成 `settings.json`）；
+3. 升级时替换整个文件夹，但要保留 `settings.json`。
+
+文件夹版不解压临时目录，启动快，也不会出现“cannot create temporary directory”。
+
+### 方式二：单文件版
+
+1. 把 `放学情况.exe`、`xb.ico`、`logo.png` 复制到同一个文件夹（例如 `D:\放学\`）；
+2. 双击 `放学情况.exe`；
 3. 需要「设置」快捷方式时，新建快捷方式指向：
    `"D:\放学\放学情况.exe" --settings`
-4. 升级时只替换 `放学情况.exe`，保留 `settings.json`。
+4. 升级时只替换 exe，保留 `settings.json`。
 
 ### Windows 7 注意
 
 - 需要 **Win7 SP1**；
 - 如果提示缺少 `api-ms-win-crt-runtime-l1-1-0.dll`，安装 KB2999226 或 `vc_redist.x86.exe`（微软官网可下载）；
-- 单文件 exe 首次启动会解压到 `%TEMP%`，老机器可能要等几秒；若被杀软拦截，加白名单或改用 `-OneDir` 文件夹版；
+- 单文件 exe 每次启动都要解压到 `%TEMP%`，老机器可能要等几秒；
+  如果弹出 `INTERNAL ERROR: cannot create temporary directory!`，改用文件夹版（见常见问题）；
 - 程序是普通窗口，任务栏里能看到「放学情况」；时段外会最小化到任务栏，点它可还原；
 - 重复启动会提示「已经在运行」，不会开出第二个窗口。
 
@@ -169,8 +181,10 @@ powershell -ExecutionPolicy Bypass -File .\build_x86.ps1
 
 1. 用 32 位 Python 3.8 安装依赖；
 2. 跑单元测试；
-3. 打包并校验 32 位；
-4. 把 `放学情况.exe`、`xb.ico`、`logo.png` 打成 `after-school-win7-x86.zip` 上传为构建产物（artifact，保留 90 天）。
+3. 分别打**单文件版**和**文件夹版**，并校验都是 32 位；
+4. 上传两个构建产物（artifact，保留 90 天）：
+   - `after-school-win7-x86-onefile`（单文件 zip）
+   - `after-school-win7-x86-onedir`（文件夹版 zip，门卫机推荐）
 
 下载位置：仓库 → **Actions** → 最新的 `build-win7-x86` → 页面底部 **Artifacts**。
 也可以手动触发：Actions → `build-win7-x86` → **Run workflow**。
@@ -191,6 +205,7 @@ over-black/
 ├─ tests/                  # 单元测试
 ├─ over.spec               # PyInstaller 配置
 ├─ build_x86.ps1           # 32 位打包脚本
+├─ packaging/部署说明.txt   # 随包分发的现场部署说明
 ├─ requirements-win7.txt   # PyInstaller 5.13.2
 └─ .github/workflows/build-win7.yml
 ```
@@ -214,11 +229,19 @@ over-black/
 **程序出错了？**
 看程序同目录的 `error.log`（带时间戳和堆栈）。
 
+**双击 exe 弹“INTERNAL ERROR: cannot create temporary directory!”？**
+这是单文件版解压到系统临时目录失败，发生在程序本身运行之前，跟设置和代码无关。处理顺序：
+1. 改用**文件夹版**（整个 `放学情况` 文件夹复制过去，双击里面的 exe），完全不依赖临时目录；
+2. 仍想用单文件版的话：`Win+R` 输入 `%TEMP%` 看能不能打开、能不能新建文件，磁盘是否还有空间；
+   也可以写一个 `启动.bat`，先把 `TEMP`/`TMP` 指到程序目录下的 `temp` 文件夹再启动 exe。
+
 **想双开？**
 不允许：第二次启动会提示「已经在运行」。
 
 ## 版本
 
+- **2.2.1** — 打包方式调整：同时提供文件夹版（不解压临时目录），解决启动报
+  “cannot create temporary directory”；新增 `部署说明.txt`。
 - **2.2.0** — 新增每天定时复位（默认 09:00，时间可设置/关闭）。
 - **2.1.0** — 恢复标题栏与任务栏（时段外最小化）、窗口出现时自动聚焦输入框、默认不置顶，
   标题栏默认顶到屏幕外、旧版设置文件自动升级。

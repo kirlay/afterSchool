@@ -151,6 +151,7 @@ if (-not (Test-Path $exe)) {
 
 Copy-Item (Join-Path $root 'xb.ico') $targetDir -Force
 Copy-Item (Join-Path $root 'logo.png') $targetDir -Force
+Copy-Item (Join-Path $root 'packaging\部署说明.txt') $targetDir -Force
 
 $stream = [System.IO.File]::OpenRead($exe)
 $reader = New-Object System.IO.BinaryReader($stream)
@@ -170,5 +171,12 @@ Write-Host '打包完成：'
 Write-Host ("  程序：{0}" -f $info.FullName)
 Write-Host ("  大小：{0:N1} MB" -f ($info.Length / 1MB))
 Write-Host '  架构：32 位（兼容 Win7 SP1 32/64 位）'
-Write-Host ("  同目录需要一起复制：xb.ico、logo.png")
+if ($OneDir) {
+    Write-Host '  形态：文件夹版（启动不解压临时目录，推荐给门卫电脑）'
+    Write-Host ("  部署：把整个「放学情况」文件夹一起复制，双击里面的 exe")
+}
+else {
+    Write-Host '  形态：单文件版（每次启动会解压到 %TEMP%）'
+    Write-Host ("  同目录需要一起复制：xb.ico、logo.png、部署说明.txt")
+}
 exit 0

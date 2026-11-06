@@ -27,7 +27,7 @@ POLL_INTERVAL_MS = 150
 POLL_FLAG_EVERY = 7
 STARTUP_SHOW_MS = 3000
 
-HELP_TEXT = """樱花校区放学情况  v2.2
+HELP_TEXT = """樱花校区放学情况  v2.2.1
 
 一、班号怎么输入
     101 = 一年级 1 班，102 = 一年级 2 班，以此类推；

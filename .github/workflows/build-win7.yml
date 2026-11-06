@@ -26,33 +26,59 @@ jobs:
       - name: 单元测试
         run: python -m unittest discover -s tests -v
 
-      - name: 打包
-        run: python -m PyInstaller --noconfirm over.spec
+      - name: 打包（单文件）
+        run: python -m PyInstaller --noconfirm --distpath dist --workpath build/onefile over.spec
+
+      - name: 打包（文件夹版）
+        shell: pwsh
+        run: |
+          $env:ASCHOOL_ONEDIR = '1'
+          python -m PyInstaller --noconfirm --distpath dist --workpath build/onedir over.spec
+          if ($LASTEXITCODE -ne 0) { throw '文件夹版打包失败' }
 
       - name: 校验 32 位并整理发布文件
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $exe = 'dist/放学情况.exe'
-          if (-not (Test-Path $exe)) { throw "没有找到 $exe" }
-          $stream = [System.IO.File]::OpenRead($exe)
-          $reader = New-Object System.IO.BinaryReader($stream)
-          $stream.Position = 0x3C
-          $offset = $reader.ReadInt32()
-          $stream.Position = $offset + 4
-          $machine = $reader.ReadUInt16()
-          $reader.Close()
-          $stream.Close()
-          if ($machine -ne 0x14C) {
-            throw ("打包结果不是 32 位 exe（PE machine=0x{0:X4}）" -f $machine)
-          }
-          Copy-Item xb.ico, logo.png dist -Force
-          Compress-Archive -Path $exe, 'xb.ico', 'logo.png' -DestinationPath 'dist/after-school-win7-x86.zip' -Force
-          Get-Item 'dist/after-school-win7-x86.zip' | Format-List FullName, Length
 
-      - name: 上传构建产物
+          function Assert-Win32([string]$file) {
+            if (-not (Test-Path $file)) { throw "没有找到 $file" }
+            $stream = [System.IO.File]::OpenRead($file)
+            $reader = New-Object System.IO.BinaryReader($stream)
+            $stream.Position = 0x3C
+            $offset = $reader.ReadInt32()
+            $stream.Position = $offset + 4
+            $machine = $reader.ReadUInt16()
+            $reader.Close()
+            $stream.Close()
+            if ($machine -ne 0x14C) {
+              throw ("不是 32 位 exe：{0}（PE machine=0x{1:X4}）" -f $file, $machine)
+            }
+          }
+
+          Assert-Win32 'dist/放学情况.exe'
+          Assert-Win32 'dist/放学情况/放学情况.exe'
+
+          Copy-Item xb.ico, logo.png 'dist' -Force
+          Copy-Item xb.ico, logo.png 'dist/放学情况' -Force
+          Copy-Item 'packaging/部署说明.txt' 'dist' -Force
+          Copy-Item 'packaging/部署说明.txt' 'dist/放学情况' -Force
+
+          Compress-Archive -Path 'dist/放学情况.exe', 'xb.ico', 'logo.png', 'packaging/部署说明.txt' -DestinationPath 'dist/after-school-win7-x86-onefile.zip' -Force
+          Compress-Archive -Path 'dist/放学情况' -DestinationPath 'dist/after-school-win7-x86-onedir.zip' -Force
+
+          Get-ChildItem 'dist/*.zip' | Format-Table Name, Length
+
+      - name: 上传构建产物（单文件版）
         uses: actions/upload-artifact@v4
         with:
-          name: after-school-win7-x86
-          path: dist/after-school-win7-x86.zip
+          name: after-school-win7-x86-onefile
+          path: dist/after-school-win7-x86-onefile.zip
+          if-no-files-found: error
+
+      - name: 上传构建产物（文件夹版）
+        uses: actions/upload-artifact@v4
+        with:
+          name: after-school-win7-x86-onedir
+          path: dist/after-school-win7-x86-onedir.zip
           if-no-files-found: error
